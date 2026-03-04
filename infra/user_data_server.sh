@@ -3,15 +3,37 @@ set -euxo pipefail
 
 APP_IMAGE="${APP_IMAGE}"
 
-dnf update -y
+retry() {
+  local n=0
+  until [ $n -ge 5 ]; do
+    "$@" && break
+    n=$((n+1))
+    sleep 5
+  done
+  if [ $n -ge 5 ]; then
+    echo "Command failed after retries: $*" >&2
+    exit 1
+  fi
+}
 
-# Install Docker
-dnf install -y docker
+retry dnf update -y
+
+# Install & start Docker
+retry dnf install -y docker
 systemctl enable docker
 systemctl start docker
 
-# Install docker compose plugin (works on AL2023)
-dnf install -y docker-compose-plugin
+# Allow ec2-user to run docker without sudo (useful for demo/debug)
+usermod -aG docker ec2-user || true
+
+# Install Docker Compose v2 as a Docker CLI plugin (repo-independent)
+mkdir -p /usr/local/lib/docker/cli-plugins
+retry curl -L "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# Sanity check: must exist
+docker compose version
 
 # Prepare app directory
 mkdir -p /opt/whale
@@ -104,9 +126,21 @@ HTML
 
 # Create .env for compose (no secrets)
 cat > .env <<EOF
-ECR_APP_IMAGE=${APP_IMAGE}
+APP_IMAGE=${APP_IMAGE}
 EOF
 
-# Pull & run
-docker compose --env-file .env -f docker-compose.aws.yml pull
-docker compose --env-file .env -f docker-compose.aws.yml up -d
+# --- ECR login so docker can pull private images ---
+AWS_REGION="eu-central-1"
+ECR_REGISTRY="554422868760.dkr.ecr.eu-central-1.amazonaws.com"
+
+# aws cli might not be present on this AMI
+if ! command -v aws >/dev/null 2>&1; then
+  retry dnf install -y awscli
+fi
+
+aws ecr get-login-password --region eu-central-1 \
+  | docker login --username AWS --password-stdin 554422868760.dkr.ecr.eu-central-1.amazonaws.com
+
+# Pull & run (use sudo to avoid any socket permission edge cases)
+sudo docker compose --env-file .env -f docker-compose.aws.yml pull
+sudo docker compose --env-file .env -f docker-compose.aws.yml up -d

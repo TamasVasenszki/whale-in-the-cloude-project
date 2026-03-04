@@ -25,6 +25,10 @@ locals {
   name = var.project_name
 }
 
+data "aws_ssm_parameter" "al2023_base_ami" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64"
+}
+
 # --- VPC ---
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
@@ -242,10 +246,13 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 
 # --- ECR repo (app) ---
 resource "aws_ecr_repository" "app" {
-  name = "${local.name}-app"
+  name         = "${local.name}-app"
+  force_delete = true
+
   image_scanning_configuration {
     scan_on_push = true
   }
+
   tags = { Name = "${local.name}-app" }
 }
 
@@ -256,13 +263,18 @@ data "aws_ami" "al2023" {
 
   filter {
     name   = "name"
-    values = ["al2023-ami-*-x86_64"]
+    values = ["al2023-ami-*-kernel-6.1-x86_64"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
   }
 }
 
 # --- Bastion EC2 ---
 resource "aws_instance" "bastion" {
-  ami                         = data.aws_ami.al2023.id
+  ami                         = data.aws_ssm_parameter.al2023_base_ami.value
   instance_type               = "t3.micro"
   subnet_id                   = aws_subnet.public_az1.id
   vpc_security_group_ids      = [aws_security_group.bastion.id]
@@ -276,7 +288,7 @@ resource "aws_instance" "bastion" {
 
 # --- Server EC2s (2 AZ) ---
 resource "aws_instance" "server_az1" {
-  ami                    = data.aws_ami.al2023.id
+  ami                    = data.aws_ssm_parameter.al2023_base_ami.value
   instance_type          = var.instance_type
   subnet_id              = aws_subnet.server_az1.id
   vpc_security_group_ids = [aws_security_group.servers.id]
@@ -292,7 +304,7 @@ resource "aws_instance" "server_az1" {
 }
 
 resource "aws_instance" "server_az2" {
-  ami                    = data.aws_ami.al2023.id
+  ami                    = data.aws_ssm_parameter.al2023_base_ami.value
   instance_type          = var.instance_type
   subnet_id              = aws_subnet.server_az2.id
   vpc_security_group_ids = [aws_security_group.servers.id]

@@ -1,6 +1,6 @@
 variable "project_name" {
   type    = string
-  default = "whale-in-the-cloude"
+  default = "tomi-whale-in-the-cloude"
 }
 
 variable "aws_region" {

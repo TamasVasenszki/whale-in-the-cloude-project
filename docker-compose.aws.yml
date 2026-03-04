@@ -13,7 +13,7 @@ services:
       - public_net
 
   api1:
-    image: ${ECR_APP_IMAGE}
+    image: ${APP_IMAGE}
     environment:
       - INSTANCE_NAME=api1
       - DB_HOST=
@@ -30,7 +30,7 @@ services:
       - internal_net
 
   api2:
-    image: ${ECR_APP_IMAGE}
+    image: ${APP_IMAGE}
     environment:
       - INSTANCE_NAME=api2
       - DB_HOST=
